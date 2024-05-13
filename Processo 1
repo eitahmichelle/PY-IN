@@ -1,0 +1,92 @@
+import pandas as pd
+import time
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+import datetime
+import os
+import threading
+
+def read_data(file_name):
+    data = pd.read_excel(file_name)
+    return data
+
+def send_messages(data, message_column, start_row, end_row, browser, messages_per_session, user_name):
+    for i in range(start_row - 1, end_row):
+        name = data.loc[i, 'Nome Completo']
+        phone_number = data.loc[i, 'Número de telefone']
+        message = data.loc[i, message_column]
+
+        search_box = browser.find_element_by_xpath('//input[@title="Search or start a new chat"]')
+        search_box.clear()
+        search_box.send_keys(name)
+        time.sleep(0.5)
+
+        try:
+            recipient_chat = WebDriverWait(browser, 10).until(
+                EC.presence_of_element_located((By.XPATH, f'//span[@title="{name}"]'))
+            )
+            recipient_chat.click()
+        except Exception as e:
+            print(f"Failed to find chat for {name}: {e}")
+            continue
+
+        input_box = WebDriverWait(browser, 10).until(
+            EC.presence_of_element_located((By.CLASS_NAME, '_1Plpp'))
+        )
+        input_box.send_keys(message)
+
+        send_button = WebDriverWait(browser, 10).until(
+            EC.presence_of_element_located((By.CLASS_NAME, '_3M-N-'))
+        )
+
+        send_button.click()
+        print(f"Message sent to {name} ({phone_number})")
+
+def write_results(data, start_row, end_row, file_name, user_name):
+    results = data.loc[start_row - 1:end_row - 1, ['Nome Completo', 'Número de telefone']]
+    results['Data de Envio'] = datetime.date.today().strftime('%d-%m-%Y')
+    results['Hora de Envio'] = datetime.datetime.now().strftime('%H:%M')
+    results['Nome do Usuário'] = user_name
+    results.to_excel(file_name, index=False, mode='a', header=False)
+
+def execute_program():
+    user_name = input("Digite seu nome completo: ")
+    messages_per_session = int(input("Digite a quantidade de mensagens por envio: "))
+    file_name = input("Insira o nome do arquivo Excel: ")
+
+    if not os.path.exists(file_name):
+        print("Arquivo não encontrado.")
+        return
+
+    data = read_data(file_name)
+
+    # Launch Chrome browser in headless mode (no graphical interface)
+    options = webdriver.ChromeOptions()
+    options.add_argument('--headless')
+    options.add_argument('--disable-gpu')
+    options.add_argument('--no-sandbox')
+    browser = webdriver.Chrome(options=options)
+
+    start_row = int(input("Digite a linha inicial na planilha: "))
+    end_row = int(input("Digite a linha final na planilha: "))
+
+    if end_row - start_row + 1 > 40:
+        print("O limite de mensagens por dia é de 40. Por favor, ajuste o intervalo.")
+        return
+
+    print(f"Enviando mensagens de {start_row} até {end_row}...")
+
+    try:
+        send_messages(data, 'MENSAGEM AUTOMÁTICA', start_row, end_row, browser, messages_per_session, user_name)
+    except Exception as e:
+        print(f"Erro durante o envio de mensagens: {e}")
+
+    write_results(data, start_row, end_row, file_name, user_name)
+
+    print("Mensagens enviadas com sucesso!")
+    browser.quit()
+
+if __name__ == "__main__":
+    execute_program()
